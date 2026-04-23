@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>EVSE ID Generator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0a0a0a;
+    --surface: #111111;
+    --surface2: #1a1a1a;
+    --border: #222222;
+    --border2: #2e2e2e;
+    --text: #ededed;
+    --text-muted: #888;
+    --text-dim: #555;
+    --accent: #ffffff;
+    --accent-green: oklch(0.72 0.17 148);
+    --accent-blue: oklch(0.72 0.17 248);
+    --accent-orange: oklch(0.72 0.17 55);
+    --font: 'Geist', system-ui, sans-serif;
+    --mono: 'Geist Mono', 'Courier New', monospace;
+    --radius: 8px;
+    --radius-sm: 5px;
+  }
+
+  html, body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; }
+
+  #root { min-height: 100vh; }
+
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+  ::selection { background: rgba(255,255,255,0.15); }
+
+  input, select {
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    border-radius: var(--radius-sm);
+    padding: 7px 10px;
+    outline: none;
+    transition: border-color 0.15s;
+    width: 100%;
+  }
+  input:focus, select:focus { border-color: #555; }
+  input::placeholder { color: var(--text-dim); }
+
+  select option { background: #1a1a1a; }
+
+  button { cursor: pointer; font-family: var(--font); }
+
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes flash {
+    0%   { background: rgba(255,255,255,0.06); }
+    100% { background: transparent; }
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.4; }
+  }
+  @keyframes ticker {
+    0%   { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+  @keyframes fadeInDown {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes idSwap {
+    0%   { opacity: 0; transform: translateY(4px); }
+    8%   { opacity: 1; transform: translateY(0); }
+    88%  { opacity: 1; transform: translateY(0); }
+    96%  { opacity: 0; transform: translateY(-4px); }
+    100% { opacity: 0; transform: translateY(-4px); }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useCallback, useRef, useEffect } = React;
+
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+const EVSE_REGEX = /^[A-Za-z]{2}\*?[0-9A-Za-z]{3}\*?E[0-9A-Za-z\-\*]{1,30}$/;
+
+const ALPHANUM = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+const ALPHA    = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+function rand(chars, len) {
+  let s = '';
+  for (let i = 0; i < len; i++) s += chars[Math.floor(Math.random() * chars.length)];
+  return s;
+}
+
+function generateId({ countryCode, operatorId, separator, suffix, suffixLength, suffixMode }) {
+  const sep = separator ? '*' : '';
+  const cc  = (countryCode || rand(ALPHA, 2)).toUpperCase().slice(0, 2);
+  const op  = (operatorId  || rand(ALPHANUM, 3)).toUpperCase().slice(0, 3);
+
+  let evseNum;
+  if (suffixMode === 'sequential') {
+    evseNum = String(suffix).padStart(suffixLength, '0');
+  } else if (suffixMode === 'random-num') {
+    evseNum = rand('0123456789', suffixLength);
+  } else {
+    evseNum = rand(ALPHANUM, suffixLength);
+  }
+
+  return `${cc}${sep}${op}${sep}E${evseNum}`;
+}
+
+function validate(id) {
+  return EVSE_REGEX.test(id);
+}
+
+const COUNTRY_CODES = [
+  // Europe
+  ['AT','Austria'],['BE','Belgium'],['BG','Bulgaria'],['HR','Croatia'],
+  ['CY','Cyprus'],['CZ','Czech Republic'],['DK','Denmark'],['EE','Estonia'],
+  ['FI','Finland'],['FR','France'],['DE','Germany'],['GR','Greece'],
+  ['HU','Hungary'],['IS','Iceland'],['IE','Ireland'],['IT','Italy'],
+  ['LV','Latvia'],['LI','Liechtenstein'],['LT','Lithuania'],['LU','Luxembourg'],
+  ['MT','Malta'],['MD','Moldova'],['MC','Monaco'],['ME','Montenegro'],
+  ['NL','Netherlands'],['MK','North Macedonia'],['NO','Norway'],['PL','Poland'],
+  ['PT','Portugal'],['RO','Romania'],['RS','Serbia'],['SK','Slovakia'],
+  ['SI','Slovenia'],['ES','Spain'],['SE','Sweden'],['CH','Switzerland'],
+  ['GB','United Kingdom'],['UA','Ukraine'],
+  // Rest of world
+  ['AU','Australia'],['CA','Canada'],['CN','China'],['JP','Japan'],
+  ['KR','South Korea'],['NZ','New Zealand'],['ZA','South Africa'],['US','United States'],
+];
+
+const TICKER_IDS = [
+  'DE*ABC*E001','GB*ENT*E042','NL*ELA*E-1A','NO*TNM*E7F3',
+  'FR*ION*E2024','SE*QAB*E99','AT*WLC*E001','CH*EVK*E5B2',
+  'BE*STO*E003','PL*GRN*E12','ES*ICG*E777','IT*EVC*E-AB',
+  'DK*ECO*E04','FI*CHR*E001','IE*ESB*E99X','PT*MOB*E33',
+];
+
+// ── animated header ───────────────────────────────────────────────────────────
+
+function Header() {
+  const [idx, setIdx] = useState(0);
+
+  useEffect(() => {
+    const t = setInterval(() => setIdx(i => (i + 1) % TICKER_IDS.length), 2200);
+    return () => clearInterval(t);
+  }, []);
+
+  const id = TICKER_IDS[idx];
+  const parts = parseId(id);
+
+  return (
+    <div style={{ marginBottom: 36, animation: 'fadeInDown 0.4s ease' }}>
+      {/* top row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+        <div style={{
+          width: 26, height: 26, borderRadius: 6,
+          background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+        }}>
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+            <circle cx="8" cy="8" r="2.8" fill="#0a0a0a"/>
+            <path d="M8 2v2M8 12v2M2 8h2M12 8h2M4.1 4.1l1.4 1.4M10.5 10.5l1.4 1.4M10.5 4.1l-1.4 1.4M5.5 10.5L4.1 11.9" stroke="#0a0a0a" strokeWidth="1.4" strokeLinecap="round"/>
+          </svg>
+        </div>
+        <span style={{ fontSize: 14, fontWeight: 600, letterSpacing: '-0.01em' }}>EVSE ID Generator</span>
+        <Tag color="blue">OCPP 2.0.1</Tag>
+      </div>
+
+      {/* animated ID preview bar */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 12,
+        background: 'var(--surface)', border: '1px solid var(--border)',
+        borderRadius: 'var(--radius)', padding: '10px 16px',
+        overflow: 'hidden',
+      }}>
+        <span style={{ fontSize: 10, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.08em', flexShrink: 0 }}>example</span>
+        <div style={{ width: 1, height: 14, background: 'var(--border2)', flexShrink: 0 }} />
+
+        {/* animated id */}
+        <div key={idx} style={{
+          fontFamily: 'var(--mono)', fontSize: 14, fontWeight: 500,
+          letterSpacing: '0.1em', display: 'flex', alignItems: 'center', gap: 6,
+          animation: 'idSwap 2.2s ease forwards',
+          flex: 1,
+        }}>
+          {parts ? (
+            <>
+              <span style={{ color: 'oklch(0.72 0.17 248)' }}>{parts.cc}</span>
+              {parts.sep && <span style={{ color: 'var(--text-dim)' }}>*</span>}
+              <span style={{ color: 'oklch(0.72 0.17 55)' }}>{parts.op}</span>
+              {parts.sep && <span style={{ color: 'var(--text-dim)' }}>*</span>}
+              <span style={{ color: 'var(--text-muted)' }}>E</span>
+              <span style={{ color: 'oklch(0.72 0.17 148)' }}>{parts.evse}</span>
+            </>
+          ) : <span>{id}</span>}
+        </div>
+
+        {/* format hint */}
+        <div style={{ flexShrink: 0, display: 'flex', gap: 4, alignItems: 'center' }}>
+          {[
+            { label: 'CC', color: 'oklch(0.72 0.17 248)' },
+            { label: '*', color: 'var(--text-dim)' },
+            { label: 'OPR', color: 'oklch(0.72 0.17 55)' },
+            { label: '*', color: 'var(--text-dim)' },
+            { label: 'E', color: 'var(--text-muted)' },
+            { label: 'xxxxx', color: 'oklch(0.72 0.17 148)' },
+          ].map((p, i) => (
+            <span key={i} style={{ fontFamily: 'var(--mono)', fontSize: 10, color: p.color, opacity: 0.55, letterSpacing: '0.05em' }}>{p.label}</span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── tiny components ───────────────────────────────────────────────────────────
+
+function Tag({ children, color = 'default' }) {
+  const colors = {
+    default: { bg: 'rgba(255,255,255,0.05)', color: '#888', border: 'rgba(255,255,255,0.08)' },
+    green:   { bg: 'rgba(120,220,130,0.08)', color: 'oklch(0.72 0.17 148)', border: 'rgba(120,220,130,0.15)' },
+    red:     { bg: 'rgba(240,80,80,0.08)',   color: 'oklch(0.72 0.17 25)',  border: 'rgba(240,80,80,0.15)'   },
+    blue:    { bg: 'rgba(80,150,255,0.08)',  color: 'oklch(0.72 0.17 248)', border: 'rgba(80,150,255,0.15)'  },
+  };
+  const c = colors[color] || colors.default;
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center',
+      padding: '2px 8px', borderRadius: 4,
+      fontSize: 11, fontFamily: 'var(--mono)', fontWeight: 500,
+      background: c.bg, color: c.color,
+      border: `1px solid ${c.border}`,
+      letterSpacing: '0.04em',
+    }}>{children}</span>
+  );
+}
+
+function CopyBtn({ text, small }) {
+  const [state, setState] = useState('idle'); // idle | copied
+
+  const copy = useCallback(async () => {
+    try { await navigator.clipboard.writeText(text); } catch { return; }
+    setState('copied');
+    setTimeout(() => setState('idle'), 1600);
+  }, [text]);
+
+  return (
+    <button onClick={copy} style={{
+      background: state === 'copied' ? 'rgba(120,220,130,0.1)' : 'rgba(255,255,255,0.06)',
+      border: `1px solid ${state === 'copied' ? 'rgba(120,220,130,0.25)' : 'var(--border2)'}`,
+      color: state === 'copied' ? 'oklch(0.72 0.17 148)' : 'var(--text-muted)',
+      borderRadius: 'var(--radius-sm)',
+      padding: small ? '4px 10px' : '6px 14px',
+      fontSize: small ? 11 : 12,
+      fontFamily: 'var(--mono)',
+      display: 'inline-flex', alignItems: 'center', gap: 5,
+      transition: 'all 0.15s',
+      whiteSpace: 'nowrap',
+    }}>
+      {state === 'copied' ? (
+        <><CheckIcon size={12} /> copied</>
+      ) : (
+        <><CopyIcon size={12} /> copy</>
+      )}
+    </button>
+  );
+}
+
+function CopyIcon({ size = 14 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="5" y="5" width="9" height="9" rx="1.5"/>
+      <path d="M11 5V3.5A1.5 1.5 0 009.5 2h-6A1.5 1.5 0 002 3.5v6A1.5 1.5 0 003.5 11H5"/>
+    </svg>
+  );
+}
+function CheckIcon({ size = 14 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 8l3.5 3.5L13 5"/>
+    </svg>
+  );
+}
+function RefreshIcon({ size = 14, spinning }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+      style={spinning ? { animation: 'spin 0.5s linear infinite' } : {}}>
+      <path d="M2 8a6 6 0 1 0 1.2-3.6"/>
+      <path d="M2 4.5V8H5.5"/>
+    </svg>
+  );
+}
+function TrashIcon({ size = 13 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 4h10M5 4V3a1 1 0 011-1h4a1 1 0 011 1v1M6 7v5M10 7v5M4 4l.8 9a1 1 0 001 .9h4.4a1 1 0 001-.9L13 4"/>
+    </svg>
+  );
+}
+function DownloadIcon({ size = 13 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 2v8M5 7l3 3 3-3M2 12h12"/>
+    </svg>
+  );
+}
+function ValidateIcon({ size = 13 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="8" cy="8" r="6"/>
+      <path d="M5.5 8l2 2 3-3"/>
+    </svg>
+  );
+}
+
+// ── settings panel ────────────────────────────────────────────────────────────
+
+function Settings({ cfg, setCfg }) {
+  return (
+    <div style={{
+      background: 'var(--surface)', border: '1px solid var(--border)',
+      borderRadius: 'var(--radius)', padding: '20px 24px',
+      display: 'flex', flexDirection: 'column', gap: 18,
+    }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+
+        {/* Country Code */}
+        <div>
+          <label style={{ display: 'block', fontSize: 11, color: 'var(--text-muted)', marginBottom: 6, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+            Country Code
+          </label>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <select
+              value={cfg.countryCode === '' || COUNTRY_CODES.some(([c]) => c === cfg.countryCode) ? cfg.countryCode : '__custom__'}
+              onChange={e => {
+                if (e.target.value === '__custom__') setCfg(c => ({ ...c, countryCode: '__custom__' }));
+                else setCfg(c => ({ ...c, countryCode: e.target.value }));
+              }}
+              style={{ flex: 1 }}
+            >
+              <option value="">Random</option>
+              {COUNTRY_CODES.map(([code, name]) => (
+                <option key={code} value={code}>{code} — {name}</option>
+              ))}
+              <option value="__custom__">Custom…</option>
+            </select>
+            {(cfg.countryCode === '__custom__' || (!COUNTRY_CODES.some(([c]) => c === cfg.countryCode) && cfg.countryCode !== '')) && (
+              <input
+                type="text"
+                maxLength={2}
+                placeholder="2-letter code (e.g. TR)"
+                value={cfg.countryCode === '__custom__' ? '' : cfg.countryCode}
+                onChange={e => setCfg(c => ({ ...c, countryCode: e.target.value.toUpperCase().replace(/[^A-Za-z]/g, '') }))}
+                style={{ fontFamily: 'var(--mono)', letterSpacing: '0.15em' }}
+                autoFocus
+              />
+            )}
+          </div>
+        </div>
+
+        {/* Operator ID */}
+        <div>
+          <label style={{ display: 'block', fontSize: 11, color: 'var(--text-muted)', marginBottom: 6, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+            Operator ID
+          </label>
+          <input
+            type="text"
+            maxLength={3}
+            placeholder="e.g. ABC (random)"
+            value={cfg.operatorId}
+            onChange={e => setCfg(c => ({ ...c, operatorId: e.target.value.toUpperCase().replace(/[^0-9A-Za-z]/g,'') }))}
+            style={{ fontFamily: 'var(--mono)', letterSpacing: '0.1em' }}
+          />
+        </div>
+
+        {/* Suffix Mode */}
+        <div>
+          <label style={{ display: 'block', fontSize: 11, color: 'var(--text-muted)', marginBottom: 6, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+            EVSE Suffix
+          </label>
+          <select value={cfg.suffixMode} onChange={e => setCfg(c => ({ ...c, suffixMode: e.target.value }))}>
+            <option value="random-alphanum">Random alphanumeric</option>
+            <option value="random-num">Random numeric</option>
+            <option value="sequential">Sequential (01, 02…)</option>
+          </select>
+        </div>
+
+        {/* Suffix Length */}
+        <div>
+          <label style={{ display: 'block', fontSize: 11, color: 'var(--text-muted)', marginBottom: 6, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+            Suffix Length <span style={{ color: 'var(--text-dim)' }}>({cfg.suffixLength})</span>
+          </label>
+          <input
+            type="range" min={1} max={12}
+            value={cfg.suffixLength}
+            onChange={e => setCfg(c => ({ ...c, suffixLength: +e.target.value }))}
+            style={{
+              width: '100%', accentColor: 'white', cursor: 'pointer',
+              background: 'none', border: 'none', padding: '8px 0',
+            }}
+          />
+        </div>
+
+      </div>
+
+      {/* Separator toggle */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 2 }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 500 }}>Asterisk separators</div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+            e.g. <span style={{ fontFamily: 'var(--mono)', color: 'var(--text)' }}>{cfg.separator ? 'DE*ABC*E001' : 'DEABCE001'}</span>
+          </div>
+        </div>
+        <Toggle value={cfg.separator} onChange={v => setCfg(c => ({ ...c, separator: v }))} />
+      </div>
+    </div>
+  );
+}
+
+function Toggle({ value, onChange }) {
+  return (
+    <div
+      onClick={() => onChange(!value)}
+      style={{
+        width: 40, height: 22, borderRadius: 11,
+        background: value ? 'white' : 'var(--surface2)',
+        border: `1px solid ${value ? 'white' : 'var(--border2)'}`,
+        cursor: 'pointer', position: 'relative',
+        transition: 'all 0.2s',
+        flexShrink: 0,
+      }}
+    >
+      <div style={{
+        position: 'absolute', top: 3, left: value ? 19 : 3,
+        width: 14, height: 14, borderRadius: '50%',
+        background: value ? '#0a0a0a' : '#555',
+        transition: 'left 0.2s, background 0.2s',
+      }} />
+    </div>
+  );
+}
+
+// ── single id card ────────────────────────────────────────────────────────────
+
+function IdCard({ id, index, onRemove, onRegenerate, isNew }) {
+  const valid = validate(id);
+  const parts = parseId(id);
+
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 12,
+      padding: '12px 16px',
+      background: 'var(--surface)',
+      border: '1px solid var(--border)',
+      borderRadius: 'var(--radius)',
+      animation: isNew ? 'slideUp 0.2s ease' : 'none',
+      transition: 'border-color 0.15s',
+    }}
+    onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--border2)'}
+    onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}
+    >
+      {/* index */}
+      <span style={{ fontSize: 11, color: 'var(--text-dim)', fontFamily: 'var(--mono)', width: 22, textAlign: 'right', flexShrink: 0 }}>
+        {String(index + 1).padStart(2, '0')}
+      </span>
+
+      {/* ID display */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontFamily: 'var(--mono)', fontSize: 15, fontWeight: 500,
+          letterSpacing: '0.08em', color: 'var(--text)',
+          display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+        }}>
+          {parts ? (
+            <>
+              <span style={{ color: 'oklch(0.72 0.17 248)' }}>{parts.cc}</span>
+              {parts.sep && <span style={{ color: 'var(--text-dim)' }}>*</span>}
+              <span style={{ color: 'oklch(0.72 0.17 55)' }}>{parts.op}</span>
+              {parts.sep && <span style={{ color: 'var(--text-dim)' }}>*</span>}
+              <span style={{ color: 'var(--text-muted)' }}>E</span>
+              <span style={{ color: 'oklch(0.72 0.17 148)' }}>{parts.evse}</span>
+            </>
+          ) : (
+            <span style={{ color: 'oklch(0.72 0.17 25)' }}>{id}</span>
+          )}
+        </div>
+        {parts && (
+          <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 3, display: 'flex', gap: 8 }}>
+            <span>Country: <span style={{ color: 'var(--text-muted)' }}>{parts.cc}</span></span>
+            <span>Operator: <span style={{ color: 'var(--text-muted)' }}>{parts.op}</span></span>
+            <span>EVSE: <span style={{ color: 'var(--text-muted)' }}>E{parts.evse}</span></span>
+          </div>
+        )}
+      </div>
+
+      {/* actions */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+        <Tag color={valid ? 'green' : 'red'}>{valid ? 'valid' : 'invalid'}</Tag>
+        <CopyBtn text={id} small />
+        <IconBtn onClick={onRegenerate} title="Regenerate"><RefreshIcon size={13} /></IconBtn>
+        <IconBtn onClick={onRemove} title="Remove"><TrashIcon size={13} /></IconBtn>
+      </div>
+    </div>
+  );
+}
+
+function parseId(id) {
+  // with separators
+  let m = id.match(/^([A-Za-z]{2})\*([0-9A-Za-z]{3})\*E([0-9A-Za-z\-\*]{1,30})$/);
+  if (m) return { cc: m[1], op: m[2], evse: m[3], sep: true };
+  // without separators
+  m = id.match(/^([A-Za-z]{2})([0-9A-Za-z]{3})E([0-9A-Za-z\-\*]{1,30})$/);
+  if (m) return { cc: m[1], op: m[2], evse: m[3], sep: false };
+  return null;
+}
+
+function IconBtn({ children, onClick, title }) {
+  const [hov, setHov] = useState(false);
+  return (
+    <button onClick={onClick} title={title} onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)} style={{
+      background: hov ? 'var(--surface2)' : 'transparent',
+      border: `1px solid ${hov ? 'var(--border2)' : 'transparent'}`,
+      color: hov ? 'var(--text)' : 'var(--text-dim)',
+      borderRadius: 'var(--radius-sm)',
+      padding: '5px 7px',
+      display: 'inline-flex', alignItems: 'center',
+      transition: 'all 0.12s',
+    }}>
+      {children}
+    </button>
+  );
+}
+
+// ── validate tab ──────────────────────────────────────────────────────────────
+
+function ValidateTab() {
+  const [input, setInput] = useState('');
+  const lines = input.split('\n').map(l => l.trim()).filter(Boolean);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div>
+        <label style={{ display: 'block', fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+          Paste EVSE IDs (one per line)
+        </label>
+        <textarea
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          placeholder={'DE*ABC*E001\nUSXYZE1234\nGB*ENT*E-1A'}
+          rows={6}
+          style={{
+            width: '100%', resize: 'vertical',
+            background: 'var(--surface2)', border: '1px solid var(--border2)',
+            color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 13,
+            borderRadius: 'var(--radius-sm)', padding: '10px 12px',
+            outline: 'none', letterSpacing: '0.04em',
+            lineHeight: 1.6,
+          }}
+        />
+      </div>
+
+      {lines.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {lines.map((line, i) => {
+            const v = validate(line);
+            const p = parseId(line);
+            return (
+              <div key={i} style={{
+                display: 'flex', alignItems: 'center', gap: 12,
+                padding: '10px 14px',
+                background: v ? 'rgba(120,220,130,0.04)' : 'rgba(240,80,80,0.04)',
+                border: `1px solid ${v ? 'rgba(120,220,130,0.12)' : 'rgba(240,80,80,0.12)'}`,
+                borderRadius: 'var(--radius-sm)',
+              }}>
+                <span style={{ fontSize: 11, color: 'var(--text-dim)', fontFamily: 'var(--mono)', width: 22, textAlign: 'right' }}>
+                  {String(i+1).padStart(2,'0')}
+                </span>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 13, letterSpacing: '0.07em', flex: 1 }}>{line}</span>
+                {p && (
+                  <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>
+                    {p.cc} · {p.op} · E{p.evse}
+                  </span>
+                )}
+                <Tag color={v ? 'green' : 'red'}>{v ? 'valid' : 'invalid'}</Tag>
+                {v && <CopyBtn text={line} small />}
+              </div>
+            );
+          })}
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', paddingTop: 4 }}>
+            {lines.filter(l => validate(l)).length}/{lines.length} valid
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── series panel ─────────────────────────────────────────────────────────────
+
+function SeriesPanel({ cfg }) {
+  const [open, setOpen] = useState(false);
+  const [start, setStart] = useState(1);
+  const [end, setEnd]     = useState(100);
+  const [done, setDone]   = useState(false);
+
+  const count = Math.max(0, end - start + 1);
+  const tooMany = count > 10000;
+
+  const generate = useCallback(() => {
+    if (tooMany || count <= 0) return;
+    const lines = [];
+    for (let i = start; i <= end; i++) {
+      const sep = cfg.separator ? '*' : '';
+      const cc  = (cfg.countryCode && cfg.countryCode !== '__custom__' ? cfg.countryCode : 'XX').toUpperCase();
+      const op  = (cfg.operatorId || 'AAA').toUpperCase().padEnd(3, '0').slice(0, 3);
+      const evse = String(i).padStart(cfg.suffixLength, '0');
+      lines.push(`${cc}${sep}${op}${sep}E${evse}`);
+    }
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url;
+    a.download = `evse-series-${start}-${end}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setDone(true);
+    setTimeout(() => setDone(false), 2000);
+  }, [cfg, start, end, count, tooMany]);
+
+  return (
+    <div style={{ marginBottom: 20 }}>
+      {/* toggle row */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          background: 'none', border: 'none', padding: 0,
+          color: open ? 'var(--text-muted)' : 'var(--text-dim)',
+          fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase',
+          display: 'flex', alignItems: 'center', gap: 6,
+          cursor: 'pointer', transition: 'color 0.15s',
+        }}
+      >
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"
+          style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.18s' }}>
+          <path d="M3 2l4 3-4 3V2z"/>
+        </svg>
+        Generate series
+      </button>
+
+      {/* expandable body */}
+      {open && (
+        <div style={{
+          marginTop: 10,
+          background: 'var(--surface)', border: '1px solid var(--border)',
+          borderRadius: 'var(--radius)', padding: '16px 20px',
+          animation: 'slideUp 0.18s ease',
+          display: 'flex', flexDirection: 'column', gap: 14,
+        }}>
+          {/* range inputs */}
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: 90 }}>
+              <label style={{ display: 'block', fontSize: 10, color: 'var(--text-dim)', marginBottom: 5, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Start</label>
+              <input
+                type="number" min={0} max={999999}
+                value={start}
+                onChange={e => setStart(Math.max(0, +e.target.value))}
+                style={{ fontFamily: 'var(--mono)' }}
+              />
+            </div>
+            <div style={{ paddingBottom: 8, color: 'var(--text-dim)', fontSize: 16, lineHeight: 1 }}>—</div>
+            <div style={{ flex: 1, minWidth: 90 }}>
+              <label style={{ display: 'block', fontSize: 10, color: 'var(--text-dim)', marginBottom: 5, letterSpacing: '0.06em', textTransform: 'uppercase' }}>End</label>
+              <input
+                type="number" min={0} max={999999}
+                value={end}
+                onChange={e => setEnd(Math.max(start, +e.target.value))}
+                style={{ fontFamily: 'var(--mono)' }}
+              />
+            </div>
+
+            {/* preview + action */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingBottom: 1 }}>
+              <span style={{ fontSize: 11, color: tooMany ? 'oklch(0.72 0.17 25)' : 'var(--text-muted)', fontFamily: 'var(--mono)', whiteSpace: 'nowrap' }}>
+                {tooMany ? 'max 10 000' : `${count.toLocaleString()} IDs`}
+              </span>
+              <button
+                onClick={generate}
+                disabled={tooMany || count <= 0}
+                style={{
+                  background: done ? 'rgba(120,220,130,0.1)' : 'var(--surface2)',
+                  border: `1px solid ${done ? 'rgba(120,220,130,0.25)' : 'var(--border2)'}`,
+                  color: done ? 'oklch(0.72 0.17 148)' : tooMany ? 'var(--text-dim)' : 'var(--text)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '7px 16px', fontSize: 12, fontWeight: 500,
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  transition: 'all 0.15s',
+                  cursor: tooMany ? 'not-allowed' : 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {done ? <><CheckIcon size={12} /> downloaded</> : <><DownloadIcon size={12} /> Download .txt</>}
+              </button>
+            </div>
+          </div>
+
+          {/* preview line */}
+          {count > 0 && !tooMany && (
+            <div style={{ fontSize: 11, color: 'var(--text-dim)', fontFamily: 'var(--mono)', letterSpacing: '0.05em' }}>
+              {(() => {
+                const sep = cfg.separator ? '*' : '';
+                const cc  = (cfg.countryCode && cfg.countryCode !== '__custom__' ? cfg.countryCode : 'XX').toUpperCase();
+                const op  = (cfg.operatorId || 'AAA').toUpperCase().padEnd(3,'0').slice(0,3);
+                const pad = n => String(n).padStart(cfg.suffixLength, '0');
+                const mid = Math.floor((start + end) / 2);
+                return `${cc}${sep}${op}${sep}E${pad(start)}  ·  ${cc}${sep}${op}${sep}E${pad(mid)}  ·  …  ·  ${cc}${sep}${op}${sep}E${pad(end)}`;
+              })()}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── main app ──────────────────────────────────────────────────────────────────
+
+const DEFAULT_CFG = {
+  countryCode: 'DE',
+  operatorId: '',
+  separator: true,
+  suffixMode: 'random-num',
+  suffixLength: 3,
+};
+
+function App() {
+  const [cfg, setCfg] = useState(DEFAULT_CFG);
+  const [ids, setIds] = useState([]);
+  const [newIds, setNewIds] = useState(new Set());
+  const [count, setCount] = useState(1);
+  const [tab, setTab] = useState('generate'); // generate | validate
+  const [settingsOpen, setSettingsOpen] = useState(true);
+  const [spinning, setSpinning] = useState(false);
+  const [suffix, setSuffix] = useState(1);
+
+  const generate = useCallback((n = count) => {
+    setSpinning(true);
+    let s = suffix;
+    const newOnes = [];
+    for (let i = 0; i < n; i++) {
+      const id = generateId({ ...cfg, suffix: s++ });
+      newOnes.push({ id, key: Math.random() });
+    }
+    setSuffix(s);
+    setIds(prev => [...newOnes, ...prev].slice(0, 200));
+    const keys = new Set(newOnes.map(x => x.key));
+    setNewIds(keys);
+    setTimeout(() => setNewIds(new Set()), 500);
+    setTimeout(() => setSpinning(false), 300);
+  }, [cfg, count, suffix]);
+
+  const regenerateOne = useCallback((idx) => {
+    setIds(prev => {
+      const next = [...prev];
+      next[idx] = { id: generateId({ ...cfg, suffix: suffix }), key: Math.random() };
+      return next;
+    });
+    setSuffix(s => s + 1);
+  }, [cfg, suffix]);
+
+  const removeOne = useCallback((idx) => {
+    setIds(prev => prev.filter((_, i) => i !== idx));
+  }, []);
+
+  const copyAll = useCallback(async () => {
+    const text = ids.map(x => x.id).join('\n');
+    await navigator.clipboard.writeText(text);
+  }, [ids]);
+
+  const download = useCallback(() => {
+    const text = ids.map(x => x.id).join('\n');
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = 'evse-ids.txt'; a.click();
+    URL.revokeObjectURL(url);
+  }, [ids]);
+
+  return (
+    <div style={{
+      maxWidth: 780, margin: '0 auto', padding: '60px 24px 120px',
+      display: 'flex', flexDirection: 'column', gap: 0,
+    }}>
+
+      {/* header */}
+      <Header />
+
+      {/* tabs */}
+      <div style={{ display: 'flex', gap: 2, marginBottom: 28 }}>
+        {['generate', 'validate'].map(t => (
+          <button key={t} onClick={() => setTab(t)} style={{
+            background: tab === t ? 'var(--surface)' : 'transparent',
+            border: `1px solid ${tab === t ? 'var(--border2)' : 'transparent'}`,
+            color: tab === t ? 'var(--text)' : 'var(--text-muted)',
+            borderRadius: 'var(--radius-sm)',
+            padding: '6px 16px', fontSize: 13, fontWeight: 500,
+            transition: 'all 0.15s',
+          }}>
+            {t === 'generate' ? 'Generate' : 'Validate'}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'validate' ? <ValidateTab /> : (
+        <>
+          {/* settings section */}
+          <div style={{ marginBottom: 20 }}>
+            <button
+              onClick={() => setSettingsOpen(o => !o)}
+              style={{
+                background: 'none', border: 'none', color: 'var(--text-muted)',
+                fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase',
+                display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10,
+                padding: 0,
+              }}
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" style={{ transform: settingsOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>
+                <path d="M3 2l4 3-4 3V2z"/>
+              </svg>
+              Configuration
+            </button>
+
+            {settingsOpen && <Settings cfg={cfg} setCfg={v => { setCfg(v); setSuffix(1); }} />}
+          </div>
+
+          {/* generate controls */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10, marginBottom: 28,
+            flexWrap: 'wrap',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 0, borderRadius: 'var(--radius-sm)', overflow: 'hidden', border: '1px solid var(--border2)' }}>
+              {[1,5,10,25].map(n => (
+                <button key={n} onClick={() => setCount(n)} style={{
+                  background: count === n ? 'white' : 'var(--surface)',
+                  color: count === n ? '#0a0a0a' : 'var(--text-muted)',
+                  border: 'none', padding: '7px 14px', fontSize: 13, fontWeight: 500,
+                  borderRight: n !== 25 ? '1px solid var(--border2)' : 'none',
+                  transition: 'all 0.12s',
+                }}>
+                  {n}
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={() => generate(count)}
+              style={{
+                background: 'white', color: '#0a0a0a',
+                border: '1px solid white', borderRadius: 'var(--radius-sm)',
+                padding: '7px 20px', fontSize: 13, fontWeight: 600,
+                display: 'flex', alignItems: 'center', gap: 7,
+                transition: 'opacity 0.15s',
+              }}
+              onMouseEnter={e => e.currentTarget.style.opacity = '0.88'}
+              onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+            >
+              <RefreshIcon size={13} spinning={spinning} />
+              Generate {count > 1 ? `${count} IDs` : 'ID'}
+            </button>
+
+            {ids.length > 0 && (
+              <>
+                <div style={{ flex: 1 }} />
+                <span style={{ fontSize: 12, color: 'var(--text-dim)', fontFamily: 'var(--mono)' }}>
+                  {ids.length} id{ids.length !== 1 ? 's' : ''}
+                </span>
+                <IconBtn onClick={copyAll} title="Copy all"><CopyIcon size={13} /></IconBtn>
+                <IconBtn onClick={download} title="Download .txt"><DownloadIcon size={13} /></IconBtn>
+                <IconBtn onClick={() => { setIds([]); setSuffix(1); }} title="Clear all"><TrashIcon size={13} /></IconBtn>
+              </>
+            )}
+          </div>
+
+          {/* series */}
+          <SeriesPanel cfg={cfg} />
+
+          {/* id list */}
+          {ids.length === 0 ? (
+            <div style={{
+              border: '1px dashed var(--border)',
+              borderRadius: 'var(--radius)',
+              padding: '48px 24px',
+              textAlign: 'center',
+              color: 'var(--text-dim)', fontSize: 13,
+            }}>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 24, marginBottom: 12, opacity: 0.3 }}>∅</div>
+              No IDs generated yet — click Generate to start
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {ids.map((item, i) => (
+                <IdCard
+                  key={item.key}
+                  id={item.id}
+                  index={i}
+                  isNew={newIds.has(item.key)}
+                  onRemove={() => removeOne(i)}
+                  onRegenerate={() => regenerateOne(i)}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+
+
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
